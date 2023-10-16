@@ -9,9 +9,10 @@ import (
 )
 
 type CodeWriter struct {
-	writer  bufio.Writer
-	Close   func()
-	labelId int
+	writer     bufio.Writer
+	Close      func()
+	labelId    int
+	segmentMap map[string]string
 }
 
 func NewCodeWriter(outputFile string) *CodeWriter {
@@ -22,7 +23,16 @@ func NewCodeWriter(outputFile string) *CodeWriter {
 	}
 
 	writer := *bufio.NewWriter(file)
-	cw := &CodeWriter{writer: writer, labelId: 1}
+
+	segmentMap := map[string]string{
+		"local":    "LCL",
+		"argument": "ARG",
+		"this":     "THIS",
+		"that":     "THAT",
+		"temp":     "R",
+	}
+
+	cw := &CodeWriter{writer: writer, labelId: 1, segmentMap: segmentMap}
 	cw.Close = func() {
 		writer.Flush()
 		file.Close()
@@ -107,16 +117,59 @@ func (cw *CodeWriter) writeComparison(command string) {
 }
 
 func (cw *CodeWriter) writePushPop(command string, commandType CommandType, segment string, index int) {
-	// Pushing a constant
 	cmds := []string{}
 	cmds = append(cmds, "// "+command)
-	cmds = append(cmds, fmt.Sprintf("@%v", index))
-	cmds = append(cmds, "D=A")
-	cmds = append(cmds, "@SP")
-	cmds = append(cmds, "A=M")
-	cmds = append(cmds, "M=D")
-	cmds = append(cmds, "@SP")
-	cmds = append(cmds, "M=M+1")
+
+	segmentVar := cw.segmentMap[segment]
+
+	if commandType == C_POP && segment == "temp" {
+		cmds = append(cmds, "@SP")
+		cmds = append(cmds, "AM=M-1")
+		cmds = append(cmds, "D=M")
+		cmds = append(cmds, fmt.Sprintf("@%s%v", segmentVar, (5+index)))
+		cmds = append(cmds, "M=D")
+	} else if commandType == C_POP {
+		cmds = append(cmds, fmt.Sprintf("@%s", segmentVar))
+		cmds = append(cmds, "D=M")
+		cmds = append(cmds, fmt.Sprintf("@%v", index))
+		cmds = append(cmds, "D=D+A")
+		cmds = append(cmds, "@R13")
+		cmds = append(cmds, "M=D")
+		cmds = append(cmds, "@SP")
+		cmds = append(cmds, "AM=M-1")
+		cmds = append(cmds, "D=M")
+		cmds = append(cmds, "@R13")
+		cmds = append(cmds, "A=M")
+		cmds = append(cmds, "M=D")
+	} else if commandType == C_PUSH && segment == "constant" {
+		// Pushing a constant
+		cmds = append(cmds, fmt.Sprintf("@%v", index))
+		cmds = append(cmds, "D=A")
+		cmds = append(cmds, "@SP")
+		cmds = append(cmds, "A=M")
+		cmds = append(cmds, "M=D")
+		cmds = append(cmds, "@SP")
+		cmds = append(cmds, "M=M+1")
+	} else if commandType == C_PUSH && segment == "temp" {
+		cmds = append(cmds, fmt.Sprintf("@%s%v", segmentVar, (5+index)))
+		cmds = append(cmds, "D=M")
+		cmds = append(cmds, "@SP")
+		cmds = append(cmds, "A=M")
+		cmds = append(cmds, "M=D")
+		cmds = append(cmds, "@SP")
+		cmds = append(cmds, "M=M+1")
+	} else {
+		cmds = append(cmds, fmt.Sprintf("@%s", segmentVar))
+		cmds = append(cmds, "D=M")
+		cmds = append(cmds, fmt.Sprintf("@%v", index))
+		cmds = append(cmds, "A=D+A")
+		cmds = append(cmds, "D=M")
+		cmds = append(cmds, "@SP")
+		cmds = append(cmds, "A=M")
+		cmds = append(cmds, "M=D")
+		cmds = append(cmds, "@SP")
+		cmds = append(cmds, "M=M+1")
+	}
 	cw.appendASMCommands(cmds)
 }
 

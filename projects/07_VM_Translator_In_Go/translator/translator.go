@@ -25,7 +25,7 @@ type Translator struct {
 
 func NewTranslator(inputFile string) *Translator {
 	p := NewParser(inputFile)
-	cw := NewCodeWriter("output.asm")
+	cw := NewCodeWriter("BasicTest.asm")
 	t := &Translator{parser: *p, codeWriter: *cw}
 	return t
 }
