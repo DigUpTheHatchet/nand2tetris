@@ -17,8 +17,8 @@ type CodeWriter struct {
 	filename   string
 }
 
-func NewCodeWriter(filename string) *CodeWriter {
-	outputFilename := filename + ".asm"
+func NewCodeWriter(directory string, filename string) *CodeWriter {
+	outputFilename := directory + "/" + filename + ".asm"
 	file, err := os.OpenFile(outputFilename, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
 
 	if err != nil {

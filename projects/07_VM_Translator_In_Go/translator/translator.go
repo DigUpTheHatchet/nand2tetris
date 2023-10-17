@@ -23,10 +23,9 @@ type Translator struct {
 	codeWriter CodeWriter
 }
 
-func NewTranslator(inputFile string) *Translator {
-	filePrefix := strings.TrimRight(inputFile, ".vm")
-	p := NewParser(inputFile)
-	cw := NewCodeWriter(filePrefix)
+func NewTranslator(filename string) *Translator {
+	p := NewParser("testfiles/" + filename + ".vm")
+	cw := NewCodeWriter("testfiles", filename)
 	t := &Translator{parser: *p, codeWriter: *cw}
 	return t
 }
