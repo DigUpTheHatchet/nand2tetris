@@ -5,6 +5,6 @@ import (
 )
 
 func TestTranslator_Run(t *testing.T) {
-	translator := NewTranslator("BasicTest.vm")
+	translator := NewTranslator("StaticTest.vm")
 	translator.Run()
 }

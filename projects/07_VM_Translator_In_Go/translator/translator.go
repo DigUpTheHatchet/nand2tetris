@@ -24,8 +24,9 @@ type Translator struct {
 }
 
 func NewTranslator(inputFile string) *Translator {
+	filePrefix := strings.TrimRight(inputFile, ".vm")
 	p := NewParser(inputFile)
-	cw := NewCodeWriter("BasicTest.asm")
+	cw := NewCodeWriter(filePrefix)
 	t := &Translator{parser: *p, codeWriter: *cw}
 	return t
 }

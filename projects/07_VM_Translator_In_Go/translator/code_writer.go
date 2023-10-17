@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 )
 
@@ -13,10 +14,12 @@ type CodeWriter struct {
 	Close      func()
 	labelId    int
 	segmentMap map[string]string
+	filename   string
 }
 
-func NewCodeWriter(outputFile string) *CodeWriter {
-	file, err := os.OpenFile(outputFile, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
+func NewCodeWriter(filename string) *CodeWriter {
+	outputFilename := filename + ".asm"
+	file, err := os.OpenFile(outputFilename, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
 
 	if err != nil {
 		log.Fatalf("Failed when creating Hack Asm output file: %s", err)
@@ -32,7 +35,7 @@ func NewCodeWriter(outputFile string) *CodeWriter {
 		"temp":     "R",
 	}
 
-	cw := &CodeWriter{writer: writer, labelId: 1, segmentMap: segmentMap}
+	cw := &CodeWriter{writer: writer, labelId: 1, segmentMap: segmentMap, filename: filename}
 	cw.Close = func() {
 		writer.Flush()
 		file.Close()
@@ -116,19 +119,38 @@ func (cw *CodeWriter) writeComparison(command string) {
 	cw.appendASMCommands(cmds)
 }
 
-func (cw *CodeWriter) writePushPop(command string, commandType CommandType, segment string, index int) {
+func (cw *CodeWriter) writePop(command string, segment string, index int) {
 	cmds := []string{}
 	cmds = append(cmds, "// "+command)
 
 	segmentVar := cw.segmentMap[segment]
 
-	if commandType == C_POP && segment == "temp" {
+	if segment == "temp" {
 		cmds = append(cmds, "@SP")
 		cmds = append(cmds, "AM=M-1")
 		cmds = append(cmds, "D=M")
 		cmds = append(cmds, fmt.Sprintf("@%s%v", segmentVar, (5+index)))
 		cmds = append(cmds, "M=D")
-	} else if commandType == C_POP {
+	} else if segment == "pointer" {
+		var thisThat string
+		if index == 0 {
+			thisThat = "THIS"
+		} else {
+			thisThat = "THAT"
+		}
+		cmds = append(cmds, "@SP")
+		cmds = append(cmds, "AM=M-1")
+		cmds = append(cmds, "D=M")
+		cmds = append(cmds, "@"+thisThat)
+		cmds = append(cmds, "M=D")
+	} else if segment == "static" {
+		varLabel := cw.filename + "." + strconv.FormatInt(int64(index), 10)
+		cmds = append(cmds, "@SP")
+		cmds = append(cmds, "AM=M-1")
+		cmds = append(cmds, "D=M")
+		cmds = append(cmds, "@"+varLabel)
+		cmds = append(cmds, "M=D")
+	} else {
 		cmds = append(cmds, fmt.Sprintf("@%s", segmentVar))
 		cmds = append(cmds, "D=M")
 		cmds = append(cmds, fmt.Sprintf("@%v", index))
@@ -141,7 +163,18 @@ func (cw *CodeWriter) writePushPop(command string, commandType CommandType, segm
 		cmds = append(cmds, "@R13")
 		cmds = append(cmds, "A=M")
 		cmds = append(cmds, "M=D")
-	} else if commandType == C_PUSH && segment == "constant" {
+	}
+	cw.appendASMCommands(cmds)
+
+}
+
+func (cw *CodeWriter) writePush(command string, segment string, index int) {
+	cmds := []string{}
+	cmds = append(cmds, "// "+command)
+
+	segmentVar := cw.segmentMap[segment]
+
+	if segment == "constant" {
 		// Pushing a constant
 		cmds = append(cmds, fmt.Sprintf("@%v", index))
 		cmds = append(cmds, "D=A")
@@ -150,8 +183,31 @@ func (cw *CodeWriter) writePushPop(command string, commandType CommandType, segm
 		cmds = append(cmds, "M=D")
 		cmds = append(cmds, "@SP")
 		cmds = append(cmds, "M=M+1")
-	} else if commandType == C_PUSH && segment == "temp" {
+	} else if segment == "temp" {
 		cmds = append(cmds, fmt.Sprintf("@%s%v", segmentVar, (5+index)))
+		cmds = append(cmds, "D=M")
+		cmds = append(cmds, "@SP")
+		cmds = append(cmds, "A=M")
+		cmds = append(cmds, "M=D")
+		cmds = append(cmds, "@SP")
+		cmds = append(cmds, "M=M+1")
+	} else if segment == "pointer" {
+		var thisThat string
+		if index == 0 {
+			thisThat = "THIS"
+		} else {
+			thisThat = "THAT"
+		}
+		cmds = append(cmds, "@"+thisThat)
+		cmds = append(cmds, "D=M")
+		cmds = append(cmds, "@SP")
+		cmds = append(cmds, "A=M")
+		cmds = append(cmds, "M=D")
+		cmds = append(cmds, "@SP")
+		cmds = append(cmds, "M=M+1")
+	} else if segment == "static" {
+		varLabel := cw.filename + "." + strconv.FormatInt(int64(index), 10)
+		cmds = append(cmds, "@"+varLabel)
 		cmds = append(cmds, "D=M")
 		cmds = append(cmds, "@SP")
 		cmds = append(cmds, "A=M")
@@ -171,6 +227,14 @@ func (cw *CodeWriter) writePushPop(command string, commandType CommandType, segm
 		cmds = append(cmds, "M=M+1")
 	}
 	cw.appendASMCommands(cmds)
+}
+
+func (cw *CodeWriter) writePushPop(command string, commandType CommandType, segment string, index int) {
+	if commandType == C_PUSH {
+		cw.writePush(command, segment, index)
+	} else {
+		cw.writePop(command, segment, index)
+	}
 }
 
 func (cw *CodeWriter) appendASMCommands(asmCommands []string) {
