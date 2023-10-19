@@ -11,7 +11,7 @@ import (
 
 // Project 07 Tests
 func TestTranslator_BasicTest(t *testing.T) {
-	translator := NewTranslator("BasicTest")
+	translator := NewTranslator("BasicTest.vm")
 	translator.Run()
 
 	expected := readASMFileContents("BasicTestExpected.asm")
@@ -21,7 +21,7 @@ func TestTranslator_BasicTest(t *testing.T) {
 }
 
 func TestTranslator_StackTest(t *testing.T) {
-	translator := NewTranslator("StackTest")
+	translator := NewTranslator("StackTest.vm")
 	translator.Run()
 
 	expected := readASMFileContents("StackTestExpected.asm")
@@ -31,7 +31,7 @@ func TestTranslator_StackTest(t *testing.T) {
 }
 
 func TestTranslator_SimpleAdd(t *testing.T) {
-	translator := NewTranslator("SimpleAdd")
+	translator := NewTranslator("SimpleAdd.vm")
 	translator.Run()
 
 	expected := readASMFileContents("SimpleAddExpected.asm")
@@ -41,7 +41,7 @@ func TestTranslator_SimpleAdd(t *testing.T) {
 }
 
 func TestTranslator_PointerTest(t *testing.T) {
-	translator := NewTranslator("PointerTest")
+	translator := NewTranslator("PointerTest.vm")
 	translator.Run()
 
 	expected := readASMFileContents("PointerTestExpected.asm")
@@ -51,7 +51,7 @@ func TestTranslator_PointerTest(t *testing.T) {
 }
 
 func TestTranslator_StaticTest(t *testing.T) {
-	translator := NewTranslator("StaticTest")
+	translator := NewTranslator("StaticTest.vm")
 	translator.Run()
 
 	expected := readASMFileContents("StaticTestExpected.asm")
@@ -62,7 +62,7 @@ func TestTranslator_StaticTest(t *testing.T) {
 
 // Project 08 Tests
 func TestTranslator_BasicLoop(t *testing.T) {
-	translator := NewTranslator("BasicLoop")
+	translator := NewTranslator("BasicLoop.vm")
 	translator.Run()
 
 	expected := readASMFileContents("BasicLoopExpected.asm")
@@ -72,7 +72,7 @@ func TestTranslator_BasicLoop(t *testing.T) {
 }
 
 func TestTranslator_FibonacciSeries(t *testing.T) {
-	translator := NewTranslator("FibonacciSeries")
+	translator := NewTranslator("FibonacciSeries.vm")
 	translator.Run()
 
 	expected := readASMFileContents("FibonacciSeriesExpected.asm")
@@ -82,7 +82,7 @@ func TestTranslator_FibonacciSeries(t *testing.T) {
 }
 
 func TestTranslator_SimpleFunction(t *testing.T) {
-	translator := NewTranslator("SimpleFunction")
+	translator := NewTranslator("SimpleFunction.vm")
 	translator.Run()
 
 	expected := readASMFileContents("SimpleFunctionExpected.asm")

@@ -14,6 +14,7 @@ type Parser struct {
 	currentCommand string
 	fields         []string
 	moreLines      bool
+	filename       string
 }
 
 func NewParser(vmFilename string) *Parser {
@@ -26,7 +27,7 @@ func NewParser(vmFilename string) *Parser {
 		log.Fatal(err)
 	}
 
-	p := &Parser{moreLines: true, scanner: *bufio.NewScanner(file)}
+	p := &Parser{moreLines: true, scanner: *bufio.NewScanner(file), filename: vmFilename}
 	return p
 }
 

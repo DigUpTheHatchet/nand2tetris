@@ -1,6 +1,9 @@
 package translator
 
 import (
+	"log"
+	"os"
+	"path"
 	"strings"
 )
 
@@ -19,43 +22,73 @@ const (
 )
 
 type Translator struct {
-	parser     Parser
+	parsers    []Parser
 	codeWriter CodeWriter
 }
 
-func NewTranslator(filename string) *Translator {
-	p := NewParser("testfiles/" + filename + ".vm")
-	cw := NewCodeWriter("testfiles", filename)
-	t := &Translator{parser: *p, codeWriter: *cw}
-	return t
-}
+func NewTranslator(input string) *Translator {
 
-func (t *Translator) Run() {
-	for t.parser.hasMoreLines() {
-		t.parser.advance()
-		if t.parser.currentCommand == "" || strings.HasPrefix(t.parser.currentCommand, "//") {
-			continue
+	vmFiles := []string{}
+	outputFileName := "testingfiles/" + strings.TrimSuffix(input, ".vm") + ".asm"
+
+	// Single ".vm" file was passed as input
+	if strings.HasSuffix(input, ".vm") {
+		vmFiles = append(vmFiles, input)
+	} else {
+		// Directory was passed
+		files, err := os.ReadDir("testingfiles/" + input)
+		if err != nil {
+			log.Fatal(err)
 		}
-		cmdType := t.parser.commandType()
-
-		if cmdType == C_PUSH || cmdType == C_POP {
-			t.codeWriter.writePushPop(t.parser.currentCommand, cmdType, t.parser.arg1(), t.parser.arg2())
-		} else if cmdType == C_LABEL {
-			t.codeWriter.writeLabel(t.parser.arg1())
-		} else if cmdType == C_GOTO {
-			t.codeWriter.writeGoto(t.parser.arg1())
-		} else if cmdType == C_IF {
-			t.codeWriter.writeIf(t.parser.arg1())
-		} else if cmdType == C_FUNCTION {
-			t.codeWriter.writeFunction(t.parser.arg1(), t.parser.arg2())
-		} else if cmdType == C_CALL {
-			t.codeWriter.writeCall(t.parser.arg1(), t.parser.arg2())
-		} else if cmdType == C_RETURN {
-			t.codeWriter.writeReturn()
-		} else {
-			t.codeWriter.writeArithmetic(t.parser.arg1())
+		for _, file := range files {
+			if strings.HasSuffix(file.Name(), ".vm") {
+				vmFiles = append(vmFiles, path.Join(input, file.Name()))
+			}
 		}
 	}
 
-	t.codeWriter.writeInfiniteLoop()
+	cw := NewCodeWriter(outputFileName)
+	parsers := []Parser{}
+	for _, vmFile := range vmFiles {
+		parsers = append(parsers, *NewParser(vmFile))
+	}
+
+	t := &Translator{parsers: parsers, codeWriter: *cw}
+	return t
+
+}
+
+func (t *Translator) Run() {
+	for _, p := range t.parsers {
+		t.codeWriter.Filename = p.filename
+		for p.hasMoreLines() {
+			p.advance()
+			if p.currentCommand == "" || strings.HasPrefix(p.currentCommand, "//") {
+				continue
+			}
+			cmdType := p.commandType()
+
+			if cmdType == C_PUSH || cmdType == C_POP {
+				t.codeWriter.writePushPop(p.currentCommand, cmdType, p.arg1(), p.arg2())
+			} else if cmdType == C_LABEL {
+				t.codeWriter.writeLabel(p.arg1())
+			} else if cmdType == C_GOTO {
+				t.codeWriter.writeGoto(p.arg1())
+			} else if cmdType == C_IF {
+				t.codeWriter.writeIf(p.arg1())
+			} else if cmdType == C_FUNCTION {
+				t.codeWriter.writeFunction(p.arg1(), p.arg2())
+			} else if cmdType == C_CALL {
+				t.codeWriter.writeCall(p.arg1(), p.arg2())
+			} else if cmdType == C_RETURN {
+				t.codeWriter.writeReturn()
+			} else {
+				t.codeWriter.writeArithmetic(p.arg1())
+			}
+		}
+
+		t.codeWriter.writeInfiniteLoop()
+	}
+
+	t.codeWriter.Close()
 }

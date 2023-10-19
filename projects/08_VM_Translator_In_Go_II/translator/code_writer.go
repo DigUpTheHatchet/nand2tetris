@@ -14,12 +14,11 @@ type CodeWriter struct {
 	Close        func()         // Closure containing references to the resources that need to be closed
 	id           map[string]int // Used to assign a unique identifier to each label and each call of a function
 	segmentMap   map[string]string
-	filename     string
+	Filename     string
 	functionName string
 }
 
-func NewCodeWriter(directory string, filename string) *CodeWriter {
-	outputFilename := directory + "/" + filename + ".asm"
+func NewCodeWriter(outputFilename string) *CodeWriter {
 	file, err := os.OpenFile(outputFilename, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
 
 	if err != nil {
@@ -36,7 +35,7 @@ func NewCodeWriter(directory string, filename string) *CodeWriter {
 		"temp":     "R",
 	}
 
-	cw := &CodeWriter{writer: writer, id: map[string]int{}, segmentMap: segmentMap, filename: filename}
+	cw := &CodeWriter{writer: writer, id: map[string]int{}, segmentMap: segmentMap}
 	cw.Close = func() {
 		writer.Flush()
 		file.Close()
