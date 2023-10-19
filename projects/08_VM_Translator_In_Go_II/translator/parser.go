@@ -21,10 +21,13 @@ func NewParser(vmFilename string) *Parser {
 	if !strings.HasSuffix(vmFilename, ".vm") {
 		log.Fatal(errors.New("Input file: (%s) must have .vm extension.."))
 	}
-
-	file, err := os.Open(vmFilename)
+	file, err := os.Open("testfiles/" + vmFilename)
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	if strings.Contains(vmFilename, "/") {
+		vmFilename = strings.Split(vmFilename, "/")[1]
 	}
 
 	p := &Parser{moreLines: true, scanner: *bufio.NewScanner(file), filename: vmFilename}

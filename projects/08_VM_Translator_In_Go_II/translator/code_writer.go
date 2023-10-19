@@ -11,14 +11,14 @@ import (
 
 type CodeWriter struct {
 	writer       bufio.Writer
-	Close        func()         // Closure containing references to the resources that need to be closed
-	id           map[string]int // Used to assign a unique identifier to each label and each call of a function
+	Close        func() // Closure containing references to the resources that need to be closed
 	segmentMap   map[string]string
 	Filename     string
-	functionName string
+	callCount    int
+	CallInitCode bool
 }
 
-func NewCodeWriter(outputFilename string) *CodeWriter {
+func NewCodeWriter(outputFilename string, callInitCode bool) *CodeWriter {
 	file, err := os.OpenFile(outputFilename, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
 
 	if err != nil {
@@ -35,29 +35,22 @@ func NewCodeWriter(outputFilename string) *CodeWriter {
 		"temp":     "R",
 	}
 
-	cw := &CodeWriter{writer: writer, id: map[string]int{}, segmentMap: segmentMap}
+	cw := &CodeWriter{writer: writer, callCount: 0, segmentMap: segmentMap, CallInitCode: callInitCode}
 	cw.Close = func() {
 		writer.Flush()
 		file.Close()
 	}
 
-	// Initialize the SP to be 256
-	initSPcmds := []string{"@256", "D=A", "@SP", "M=D"}
-	cw.appendASMCommands(initSPcmds)
-	// Call Sys.init()
-	cw.writeCall("Sys.init", 0)
-
-	return cw
-}
-
-func (c *CodeWriter) getId(key string) int {
-	id, ok := c.id[key]
-	if !ok {
-		c.id[key] = 0
+	// The earlier project 7/8 test scripts have their own init code
+	if callInitCode {
+		// Initialize the SP to be 256
+		initSPcmds := []string{"@256", "D=A", "@SP", "M=D"}
+		cw.appendASMCommands(initSPcmds)
+		// Call Sys.init()
+		cw.writeCall("Sys.init", 0)
 	}
 
-	c.id[key] = id + 1
-	return id
+	return cw
 }
 
 func (cw *CodeWriter) writeArithmetic(command string) {
@@ -108,12 +101,9 @@ func (cw *CodeWriter) writeArithmetic(command string) {
 func (cw *CodeWriter) writeComparison(command string) {
 	// eq, gt, lt
 	op := "J" + strings.ToUpper(command)
-	id := cw.getId(fmt.Sprintf("%s$%s", cw.functionName, command))
+	id := cw.callCount
+	cw.callCount += 1
 	labelPrefix := fmt.Sprintf("%v_%v", strings.ToUpper(command), id)
-
-	if cw.functionName != "" {
-		labelPrefix = fmt.Sprintf("%s$%s", cw.functionName, labelPrefix)
-	}
 
 	cmds := []string{}
 	cmds = append(cmds, "// "+command)
@@ -164,7 +154,7 @@ func (cw *CodeWriter) writePop(command string, segment string, index int) {
 		cmds = append(cmds, "@"+thisThat)
 		cmds = append(cmds, "M=D")
 	} else if segment == "static" {
-		varLabel := cw.filename + "." + strconv.FormatInt(int64(index), 10)
+		varLabel := cw.Filename + "." + strconv.FormatInt(int64(index), 10)
 		cmds = append(cmds, "@SP")
 		cmds = append(cmds, "AM=M-1")
 		cmds = append(cmds, "D=M")
@@ -225,7 +215,7 @@ func (cw *CodeWriter) writePush(command string, segment string, index int) {
 		cmds = append(cmds, "@SP")
 		cmds = append(cmds, "M=M+1")
 	} else if segment == "static" {
-		varLabel := cw.filename + "." + strconv.FormatInt(int64(index), 10)
+		varLabel := cw.Filename + "." + strconv.FormatInt(int64(index), 10)
 		cmds = append(cmds, "@"+varLabel)
 		cmds = append(cmds, "D=M")
 		cmds = append(cmds, "@SP")
@@ -278,9 +268,8 @@ func (cw *CodeWriter) writeInfiniteLoop() {
 }
 
 func (cw *CodeWriter) writeLabel(label string) {
-	if cw.functionName != "" {
-		label = fmt.Sprintf("%s$%s", cw.functionName, label)
-	}
+	label = fmt.Sprintf("%s$%s", cw.Filename, label)
+
 	cmds := []string{}
 	cmds = append(cmds, "// label "+label)
 	cmds = append(cmds, fmt.Sprintf("(%v)", label))
@@ -289,9 +278,8 @@ func (cw *CodeWriter) writeLabel(label string) {
 }
 
 func (cw *CodeWriter) writeGoto(label string) {
-	if cw.functionName != "" {
-		label = fmt.Sprintf("%s$%s", cw.functionName, label)
-	}
+	label = fmt.Sprintf("%s$%s", cw.Filename, label)
+
 	cmds := []string{}
 	cmds = append(cmds, "// goto "+label)
 	cmds = append(cmds, fmt.Sprintf("@%v", label))
@@ -300,9 +288,7 @@ func (cw *CodeWriter) writeGoto(label string) {
 }
 
 func (cw *CodeWriter) writeIf(label string) {
-	if cw.functionName != "" {
-		label = fmt.Sprintf("%s$%s", cw.functionName, label)
-	}
+	label = fmt.Sprintf("%s$%s", cw.Filename, label)
 
 	cmds := []string{}
 	cmds = append(cmds, "// if-goto "+label)
@@ -347,26 +333,15 @@ func (cw *CodeWriter) writeFunction(functionName string, nVars int) {
 	cmds = append(cmds, fmt.Sprintf("(%s$INIT_END)", functionName))
 
 	cw.appendASMCommands(cmds)
-
-	cw.functionName = functionName
 }
 
 func (cw *CodeWriter) writeCall(functionName string, nVars int) {
-	// comment := fmt.Sprintf("// call %s %d\n", label, nArgs)
-	// returnAddress := fmt.Sprintf("%s$ret%d", c.function, c.getId(c.function+"$ret"))
-	// output := fmt.Sprintf(pushAddressAsm, returnAddress) +
-	// 	fmt.Sprintf(pushSymbolAsm, "LCL") +
-	// 	fmt.Sprintf(pushSymbolAsm, "ARG") +
-	// 	fmt.Sprintf(pushSymbolAsm, "THIS") +
-	// 	fmt.Sprintf(pushSymbolAsm, "THAT") +
-	// 	fmt.Sprintf(callAsm, label, nArgs, returnAddress)
-	// c.write(comment + output)
-
 	cmds := []string{}
 	cmds = append(cmds, fmt.Sprintf("// call %s %v", functionName, nVars))
 	// Push return address onto stack
-	returnAddress := fmt.Sprintf("%s$ret%v", functionName, cw.getId(cw.functionName+"$ret"))
-
+	id := cw.callCount
+	cw.callCount += 1
+	returnAddress := fmt.Sprintf("%s$ret%v", functionName, id)
 	cmds = append(cmds, fmt.Sprintf("@%s", returnAddress))
 	cmds = append(cmds, "D=A")
 	cmds = append(cmds, "@SP")
@@ -422,6 +397,7 @@ func (cw *CodeWriter) writeCall(functionName string, nVars int) {
 	cmds = append(cmds, fmt.Sprintf("@%s", functionName))
 	cmds = append(cmds, "0;JMP")
 	cmds = append(cmds, fmt.Sprintf("(%s)", returnAddress))
+	cw.appendASMCommands(cmds)
 }
 
 func (cw *CodeWriter) writeReturn() {
@@ -434,59 +410,71 @@ func (cw *CodeWriter) writeReturn() {
 
 	cmds := []string{}
 	cmds = append(cmds, "// return")
-	// Pop the return value of the top of stack, store value in ARG
+
+	// Save the value of LCL in R13
+	cmds = append(cmds, "@LCL")
+	cmds = append(cmds, "D=M")
+	cmds = append(cmds, "@R13")
+	cmds = append(cmds, "M=D")
+
+	// Store the return address (the value of LCL-5) in R14
+	cmds = append(cmds, "@5")
+	cmds = append(cmds, "D=D-A")
+	cmds = append(cmds, "A=D")
+	cmds = append(cmds, "D=M")
+	cmds = append(cmds, "@R14")
+	cmds = append(cmds, "M=D")
+
+	// Pop the return value of the top of stack, store in ARG
 	cmds = append(cmds, "@SP")
 	cmds = append(cmds, "AM=M-1")
 	cmds = append(cmds, "D=M")
 	cmds = append(cmds, "@ARG")
 	cmds = append(cmds, "A=M")
 	cmds = append(cmds, "M=D")
-	// Set the SP to the address after ARG
+
+	// Set the SP to the address immediately after ARG
 	cmds = append(cmds, "@ARG")
 	cmds = append(cmds, "D=M+1")
 	cmds = append(cmds, "@SP")
 	cmds = append(cmds, "M=D")
-	// Store the return address (the value of LCL-5) in R13
-	cmds = append(cmds, "@5")
-	cmds = append(cmds, "D=A")
-	cmds = append(cmds, "@LCL")
-	cmds = append(cmds, "D=M-D")
-	cmds = append(cmds, "@R13")
-	cmds = append(cmds, "M=D")
 	// Set the THAT value to be the value of LCL - 1
-	cmds = append(cmds, "@LCL")
-	cmds = append(cmds, "A=M-1")
+	cmds = append(cmds, "@R13")
+	cmds = append(cmds, "D=M-1")
+	cmds = append(cmds, "A=D")
 	cmds = append(cmds, "D=M")
 	cmds = append(cmds, "@THAT")
 	cmds = append(cmds, "M=D")
-	// Set the THIS value be the value of LCL - 2
+	// Set the THIS value to be the value of LCL - 2
+	cmds = append(cmds, "@R13")
+	cmds = append(cmds, "D=M")
 	cmds = append(cmds, "@2")
-	cmds = append(cmds, "D=A")
-	cmds = append(cmds, "@LCL")
-	cmds = append(cmds, "A=M-D")
+	cmds = append(cmds, "D=D-A")
+	cmds = append(cmds, "A=D")
 	cmds = append(cmds, "D=M")
 	cmds = append(cmds, "@THIS")
 	cmds = append(cmds, "M=D")
-	// Set the ARG value be the value of LCL - 3
+	// Set the ARG value to be the value of LCL - 3
+	cmds = append(cmds, "@R13")
+	cmds = append(cmds, "D=M")
 	cmds = append(cmds, "@3")
-	cmds = append(cmds, "D=A")
-	cmds = append(cmds, "@LCL")
-	cmds = append(cmds, "A=M-D")
+	cmds = append(cmds, "D=D-A")
+	cmds = append(cmds, "A=D")
 	cmds = append(cmds, "D=M")
 	cmds = append(cmds, "@ARG")
 	cmds = append(cmds, "M=D")
 	// Set the LCL value to be the value of LCL - 4
-	cmds = append(cmds, "@LCL")
+	cmds = append(cmds, "@R13")
 	cmds = append(cmds, "D=M")
 	cmds = append(cmds, "@4")
-	cmds = append(cmds, "A=D-A")
+	cmds = append(cmds, "D=D-A")
+	cmds = append(cmds, "A=D")
 	cmds = append(cmds, "D=M")
 	cmds = append(cmds, "@LCL")
 	cmds = append(cmds, "M=D")
 	// Jump to the return address
-	cmds = append(cmds, "@R13")
+	cmds = append(cmds, "@R14")
 	cmds = append(cmds, "A=M")
 	cmds = append(cmds, "0;JMP")
-
 	cw.appendASMCommands(cmds)
 }
