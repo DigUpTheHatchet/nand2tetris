@@ -91,6 +91,16 @@ func TestTranslator_SimpleFunction(t *testing.T) {
 	assertSlicesEqual(t, expected, actual)
 }
 
+func TestTranslator_FibonacciElement(t *testing.T) {
+	translator := NewTranslator("FibonacciElement")
+	translator.Run()
+
+	// expected := readASMFileContents("FibonacciElement/FibonacciElementExpected.asm")
+	// actual := readASMFileContents("FibonacciElement/FibonacciElement.asm")
+
+	// assertSlicesEqual(t, expected, actual)
+}
+
 // Helper Functions
 func readASMFileContents(filename string) []string {
 	if !strings.HasSuffix(filename, ".asm") {

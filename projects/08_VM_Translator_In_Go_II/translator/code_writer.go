@@ -10,11 +10,12 @@ import (
 )
 
 type CodeWriter struct {
-	writer     bufio.Writer
-	Close      func() // Closure containing references to the resources that need to be closed
-	labelId    int    // Used to assign a unique identifier to each label
-	segmentMap map[string]string
-	filename   string
+	writer       bufio.Writer
+	Close        func()         // Closure containing references to the resources that need to be closed
+	id           map[string]int // Used to assign a unique identifier to each label and each call of a function
+	segmentMap   map[string]string
+	filename     string
+	functionName string
 }
 
 func NewCodeWriter(directory string, filename string) *CodeWriter {
@@ -35,13 +36,29 @@ func NewCodeWriter(directory string, filename string) *CodeWriter {
 		"temp":     "R",
 	}
 
-	cw := &CodeWriter{writer: writer, labelId: 1, segmentMap: segmentMap, filename: filename}
+	cw := &CodeWriter{writer: writer, id: map[string]int{}, segmentMap: segmentMap, filename: filename}
 	cw.Close = func() {
 		writer.Flush()
 		file.Close()
 	}
 
+	// Initialize the SP to be 256
+	initSPcmds := []string{"@256", "D=A", "@SP", "M=D"}
+	cw.appendASMCommands(initSPcmds)
+	// Call Sys.init()
+	cw.writeCall("Sys.init", 0)
+
 	return cw
+}
+
+func (c *CodeWriter) getId(key string) int {
+	id, ok := c.id[key]
+	if !ok {
+		c.id[key] = 0
+	}
+
+	c.id[key] = id + 1
+	return id
 }
 
 func (cw *CodeWriter) writeArithmetic(command string) {
@@ -92,8 +109,12 @@ func (cw *CodeWriter) writeArithmetic(command string) {
 func (cw *CodeWriter) writeComparison(command string) {
 	// eq, gt, lt
 	op := "J" + strings.ToUpper(command)
-	labelPrefix := fmt.Sprintf("%v_%v", strings.ToUpper(command), cw.labelId)
-	cw.labelId++
+	id := cw.getId(fmt.Sprintf("%s$%s", cw.functionName, command))
+	labelPrefix := fmt.Sprintf("%v_%v", strings.ToUpper(command), id)
+
+	if cw.functionName != "" {
+		labelPrefix = fmt.Sprintf("%s$%s", cw.functionName, labelPrefix)
+	}
 
 	cmds := []string{}
 	cmds = append(cmds, "// "+command)
@@ -258,6 +279,9 @@ func (cw *CodeWriter) writeInfiniteLoop() {
 }
 
 func (cw *CodeWriter) writeLabel(label string) {
+	if cw.functionName != "" {
+		label = fmt.Sprintf("%s$%s", cw.functionName, label)
+	}
 	cmds := []string{}
 	cmds = append(cmds, "// label "+label)
 	cmds = append(cmds, fmt.Sprintf("(%v)", label))
@@ -266,6 +290,9 @@ func (cw *CodeWriter) writeLabel(label string) {
 }
 
 func (cw *CodeWriter) writeGoto(label string) {
+	if cw.functionName != "" {
+		label = fmt.Sprintf("%s$%s", cw.functionName, label)
+	}
 	cmds := []string{}
 	cmds = append(cmds, "// goto "+label)
 	cmds = append(cmds, fmt.Sprintf("@%v", label))
@@ -274,6 +301,10 @@ func (cw *CodeWriter) writeGoto(label string) {
 }
 
 func (cw *CodeWriter) writeIf(label string) {
+	if cw.functionName != "" {
+		label = fmt.Sprintf("%s$%s", cw.functionName, label)
+	}
+
 	cmds := []string{}
 	cmds = append(cmds, "// if-goto "+label)
 	cmds = append(cmds, "@SP")
@@ -317,10 +348,81 @@ func (cw *CodeWriter) writeFunction(functionName string, nVars int) {
 	cmds = append(cmds, fmt.Sprintf("(%s$INIT_END)", functionName))
 
 	cw.appendASMCommands(cmds)
+
+	cw.functionName = functionName
 }
 
 func (cw *CodeWriter) writeCall(functionName string, nVars int) {
+	// comment := fmt.Sprintf("// call %s %d\n", label, nArgs)
+	// returnAddress := fmt.Sprintf("%s$ret%d", c.function, c.getId(c.function+"$ret"))
+	// output := fmt.Sprintf(pushAddressAsm, returnAddress) +
+	// 	fmt.Sprintf(pushSymbolAsm, "LCL") +
+	// 	fmt.Sprintf(pushSymbolAsm, "ARG") +
+	// 	fmt.Sprintf(pushSymbolAsm, "THIS") +
+	// 	fmt.Sprintf(pushSymbolAsm, "THAT") +
+	// 	fmt.Sprintf(callAsm, label, nArgs, returnAddress)
+	// c.write(comment + output)
 
+	cmds := []string{}
+	cmds = append(cmds, fmt.Sprintf("// call %s %v", functionName, nVars))
+	// Push return address onto stack
+	returnAddress := fmt.Sprintf("%s$ret%v", functionName, cw.getId(cw.functionName+"$ret"))
+
+	cmds = append(cmds, fmt.Sprintf("@%s", returnAddress))
+	cmds = append(cmds, "D=A")
+	cmds = append(cmds, "@SP")
+	cmds = append(cmds, "A=M")
+	cmds = append(cmds, "M=D")
+	cmds = append(cmds, "@SP")
+	cmds = append(cmds, "M=M+1")
+	// Push LCL address onto stack
+	cmds = append(cmds, "@LCL")
+	cmds = append(cmds, "D=M")
+	cmds = append(cmds, "@SP")
+	cmds = append(cmds, "A=M")
+	cmds = append(cmds, "M=D")
+	cmds = append(cmds, "@SP")
+	cmds = append(cmds, "M=M+1")
+	// Push ARG address onto stack
+	cmds = append(cmds, "@ARG")
+	cmds = append(cmds, "D=M")
+	cmds = append(cmds, "@SP")
+	cmds = append(cmds, "A=M")
+	cmds = append(cmds, "M=D")
+	cmds = append(cmds, "@SP")
+	cmds = append(cmds, "M=M+1")
+	// Push THIS address onto stack
+	cmds = append(cmds, "@THIS")
+	cmds = append(cmds, "D=M")
+	cmds = append(cmds, "@SP")
+	cmds = append(cmds, "A=M")
+	cmds = append(cmds, "M=D")
+	cmds = append(cmds, "@SP")
+	cmds = append(cmds, "M=M+1")
+	// Push THAT address onto stack
+	cmds = append(cmds, "@THAT")
+	cmds = append(cmds, "D=M")
+	cmds = append(cmds, "@SP")
+	cmds = append(cmds, "A=M")
+	cmds = append(cmds, "M=D")
+	cmds = append(cmds, "@SP")
+	cmds = append(cmds, "M=M+1")
+	// Call the function
+	cmds = append(cmds, "@SP")
+	cmds = append(cmds, "D=M")
+	cmds = append(cmds, "@5")
+	cmds = append(cmds, "D=D-A")
+	cmds = append(cmds, fmt.Sprintf("@%v", nVars))
+	cmds = append(cmds, "D=D-A")
+	cmds = append(cmds, "@ARG")
+	cmds = append(cmds, "M=D")
+	cmds = append(cmds, "@SP")
+	cmds = append(cmds, "D=M")
+	cmds = append(cmds, "@LCL")
+	cmds = append(cmds, "M=D")
+	cmds = append(cmds, fmt.Sprintf("@%s", functionName))
+	cmds = append(cmds, "0;JMP")
+	cmds = append(cmds, fmt.Sprintf("(%s)", returnAddress))
 }
 
 func (cw *CodeWriter) writeReturn() {
